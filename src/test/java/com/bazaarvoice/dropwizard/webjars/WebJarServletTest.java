@@ -13,24 +13,20 @@ import static com.google.common.net.HttpHeaders.IF_NONE_MATCH;
 import static com.google.common.net.HttpHeaders.LAST_MODIFIED;
 import static org.hibernate.validator.internal.util.Contracts.assertNotNull;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 public class WebJarServletTest {
-    private final String[] DEFAULT_WEBJAR_PACKAGES = WebJarServlet.DEFAULT_WEBJAR_PACKAGES;
     private final ServletTester servletTester = new ServletTester();
 
     @Before
     public void setup() throws Exception {
-        servletTester.addServlet(WebJarServlet.class, WebJarServlet.URL_PREFIX + "*");
+        servletTester.addServlet(TestWebJarServlet.class, TestWebJarServlet.URL_PREFIX + "*");
         servletTester.start();
     }
 
     @After
     public void teardown() throws Exception {
         servletTester.stop();
-
-        // Make sure we always restore the packages back to normal after every test.
-        WebJarServlet.DEFAULT_WEBJAR_PACKAGES = DEFAULT_WEBJAR_PACKAGES;
+        TestWebJarServlet.resetMavenGroups();
     }
 
     @Test
@@ -52,36 +48,27 @@ public class WebJarServletTest {
     }
 
     @Test
-    public void testNonStandardWebjar() throws Exception {
-        HttpTester response1 = get("test-webjar/hello.txt");
-        assertEquals(404, response1.getStatus());
+    public void testNonStandardGroupWebjar() throws Exception {
+        setMavenGroups("org.webjars", "com.bazaarvoice");
 
-        // Restart the servlet tester but this time include the com.bazaarvoice package when looking for webjars.
-        servletTester.stop();
-        servletTester.join();
-        WebJarServlet.DEFAULT_WEBJAR_PACKAGES = new String[] {"org.webjars", "com.bazaarvoice"};
-        servletTester.start();
-
-        HttpTester response2 = get("test-webjar/hello.txt");
-        assertEquals(200, response2.getStatus());
-        assertEquals("Hello World!", response2.getContent());
+        HttpTester response = get("test-webjar/hello.txt");
+        assertEquals(200, response.getStatus());
+        assertEquals("Hello World!", response.getContent());
     }
 
     @Test
-    public void testCorrectEtag() {
-        HttpTester response1 = get("bootstrap/css/bootstrap.css");
-        assertEquals(200, response1.getStatus());
-        assertNotNull(response1.getHeader(ETAG));
+    public void testCorrectETag() {
+        String eTag = get("bootstrap/css/bootstrap.css").getHeader(ETAG);
 
         HttpTester request = request("bootstrap/css/bootstrap.css");
-        request.addHeader(IF_NONE_MATCH, response1.getHeader(ETAG));
+        request.addHeader(IF_NONE_MATCH, eTag);
 
-        HttpTester response2 = get(request);
-        assertEquals(304, response2.getStatus());
+        HttpTester response = get(request);
+        assertEquals(304, response.getStatus());
     }
 
     @Test
-    public void testWildcardEtag() {
+    public void testWildcardETag() {
         HttpTester request = request("bootstrap/css/bootstrap.css");
         request.addHeader(IF_NONE_MATCH, "*");
 
@@ -91,9 +78,21 @@ public class WebJarServletTest {
     }
 
     @Test
-    public void testWrongEtag() {
+    public void testGzipETag() {
+        String eTag = get("bootstrap/css/bootstrap.css").getHeader(ETAG);
+        eTag = eTag.substring(0, eTag.length() - 1) + "-gzip" + '"';
+
         HttpTester request = request("bootstrap/css/bootstrap.css");
-        request.addHeader(IF_NONE_MATCH, "\"not-the-right-etag\"");
+        request.addHeader(IF_NONE_MATCH, eTag);
+
+        HttpTester response = get(request);
+        assertEquals(304, response.getStatus());
+    }
+
+    @Test
+    public void testWrongETag() {
+        HttpTester request = request("bootstrap/css/bootstrap.css");
+        request.addHeader(IF_NONE_MATCH, '"' + "wrong-etag" + '"');
 
         HttpTester response = get(request);
         assertEquals(200, response.getStatus());
@@ -101,9 +100,9 @@ public class WebJarServletTest {
     }
 
     @Test
-    public void testMalformedEtag() {
+    public void testUnquotedETag() {
         HttpTester request = request("bootstrap/css/bootstrap.css");
-        request.addHeader(IF_NONE_MATCH, "not-the-right-etag");  // Etags should be quoted
+        request.addHeader(IF_NONE_MATCH, "not-the-right-etag");
 
         HttpTester response = get(request);
         assertEquals(200, response.getStatus());
@@ -112,41 +111,35 @@ public class WebJarServletTest {
 
     @Test
     public void testCorrectIfModifiedSince() {
-        HttpTester response1 = get("bootstrap/css/bootstrap.css");
-        assertEquals(200, response1.getStatus());
-        assertTrue(response1.getDateHeader(LAST_MODIFIED) > 0);
+        long lastModified = get("bootstrap/css/bootstrap.css").getDateHeader(LAST_MODIFIED);
 
         HttpTester request = request("bootstrap/css/bootstrap.css");
-        request.addDateHeader(IF_MODIFIED_SINCE, response1.getDateHeader(LAST_MODIFIED));
+        request.addDateHeader(IF_MODIFIED_SINCE, lastModified);
 
-        HttpTester response2 = get(request);
-        assertEquals(304, response2.getStatus());
+        HttpTester response = get(request);
+        assertEquals(304, response.getStatus());
     }
 
     @Test
     public void testPastIfModifiedSince() {
-        HttpTester response1 = get("bootstrap/css/bootstrap.css");
-        assertEquals(200, response1.getStatus());
-        assertTrue(response1.getDateHeader(LAST_MODIFIED) > 0);
+        long lastModified = get("bootstrap/css/bootstrap.css").getDateHeader(LAST_MODIFIED);
 
         HttpTester request = request("bootstrap/css/bootstrap.css");
-        request.addDateHeader(IF_MODIFIED_SINCE, response1.getDateHeader(LAST_MODIFIED)-1);
+        request.addDateHeader(IF_MODIFIED_SINCE, lastModified - 1);
 
-        HttpTester response2 = get(request);
-        assertEquals(200, response2.getStatus());
+        HttpTester response = get(request);
+        assertEquals(200, response.getStatus());
     }
 
     @Test
     public void testFutureIfModifiedSince() {
-        HttpTester response1 = get("bootstrap/css/bootstrap.css");
-        assertEquals(200, response1.getStatus());
-        assertTrue(response1.getDateHeader(LAST_MODIFIED) > 0);
+        long lastModified = get("bootstrap/css/bootstrap.css").getDateHeader(LAST_MODIFIED);
 
         HttpTester request = request("bootstrap/css/bootstrap.css");
-        request.addDateHeader(IF_MODIFIED_SINCE, response1.getDateHeader(LAST_MODIFIED)+1);
+        request.addDateHeader(IF_MODIFIED_SINCE, lastModified + 1);
 
-        HttpTester response2 = get(request);
-        assertEquals(304, response2.getStatus());
+        HttpTester response = get(request);
+        assertEquals(304, response.getStatus());
     }
 
     private HttpTester request(String url) {
@@ -173,5 +166,18 @@ public class WebJarServletTest {
         }
 
         return response;
+    }
+
+    private void setMavenGroups(String... groups) {
+        try {
+            servletTester.stop();
+            servletTester.join();
+
+            TestWebJarServlet.setMavenGroups(groups);
+
+            servletTester.start();
+        } catch (Exception e) {
+            throw Throwables.propagate(e);
+        }
     }
 }

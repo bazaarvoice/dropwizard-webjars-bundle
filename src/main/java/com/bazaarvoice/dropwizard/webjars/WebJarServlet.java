@@ -1,23 +1,13 @@
 package com.bazaarvoice.dropwizard.webjars;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Charsets;
-import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.cache.Weigher;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.hash.Hashing;
-import com.google.common.io.ByteStreams;
-import com.google.common.io.Closer;
-import com.google.common.io.Resources;
 import com.google.common.net.HttpHeaders;
-import com.google.common.net.MediaType;
-import org.eclipse.jetty.http.MimeTypes;
-import org.eclipse.jetty.io.Buffer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
@@ -26,50 +16,48 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.EntityTag;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.nio.charset.Charset;
-import java.util.Date;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * A servlet that will load resources from WebJars found in the classpath.  In order to make it more convenient to
+ * use a WebJar, this servlet will automatically determine the version of the WebJar present in the classpath and make
+ * it so that you don't need to explicitly specify a version number as part of the URL.  This allows WebJars to be
+ * upgraded entirely via maven dependencies without having to update all of the references to the WebJar in your UI
+ * code.
+ */
 public class WebJarServlet extends HttpServlet {
     /** The URL prefix that webjars are served out of. */
     public static final String URL_PREFIX = "/webjars/";
 
-    /** The default package that webjars.org built webjars are found in. */
-    @VisibleForTesting
-    static String[] DEFAULT_WEBJAR_PACKAGES = {"org.webjars"};
+    /** The default maven group(s) that WebJars are searched for in. */
+    public static final String[] DEFAULT_MAVEN_GROUPS = { "org.webjars" };
 
     /** A path parser that can determine what library and library resource a particular path is for. */
     private static final Pattern PATH_PARSER = Pattern.compile(URL_PREFIX + "([^/]+)/(.+)");
 
-    /** An If-None-Match header parser, splits the header into the multiple eTags that might be present. */
+    /** An If-None-Match header parser, splits the header into the multiple ETags that might be present. */
     private static final Splitter IF_NONE_MATCH_SPLITTER = Splitter.on(',').omitEmptyStrings().trimResults();
+
+    private static final Logger LOG = LoggerFactory.getLogger(WebJarServlet.class);
 
     private final transient LoadingCache<AssetId, Asset> cache;
 
-    public WebJarServlet() {
-        this(null, null);
-    }
-
     @SuppressWarnings("unchecked")
-    public WebJarServlet(CacheBuilder builder, Iterable<String> packages) {
+    public WebJarServlet(CacheBuilder builder, Iterable<String> groups) {
         if (builder == null) {
             builder = CacheBuilder.newBuilder()
-                    .maximumWeight(2 * 1024 * 1024)
+                    .maximumWeight(5 * 1024 * 1024)
                     .expireAfterAccess(5, TimeUnit.MINUTES);
         }
 
-        if (packages == null || Iterables.isEmpty(packages)) {
-            packages = ImmutableList.copyOf(DEFAULT_WEBJAR_PACKAGES);
+        if (groups == null || Iterables.isEmpty(groups)) {
+            groups = ImmutableList.copyOf(DEFAULT_MAVEN_GROUPS);
         }
 
-        AssetLoader loader = new AssetLoader(new VersionLoader(packages));
-        cache = builder.weigher(new AssetSizeWeigher()).build(loader);
+        AssetLoader loader = new AssetLoader(new VersionLoader(groups));
+        cache = builder.weigher(new AssetWeigher()).build(loader);
     }
 
     @Override
@@ -77,51 +65,58 @@ public class WebJarServlet extends HttpServlet {
         try {
             handle(req, resp);
         } catch (Exception e) {
-            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+            LOG.info("Error processing request: {}", req, e);
+            resp.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
 
     private void handle(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String path = getFullPath(req);
+
+        // Check to see if this is a valid path that we know how to deal with, if so parse out the library and resource
         Matcher m = PATH_PARSER.matcher(path);
         if (!m.matches()) {
             resp.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
 
+        // The path is valid, try to load the asset
         AssetId id = new AssetId(m.group(1), m.group(2));
         Asset asset = cache.getUnchecked(id);
+        if (asset == AssetLoader.NOT_FOUND) {
+            resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
 
         // We know we've found the asset.  No matter what happens, make sure we send back its last modification time
-        // as well as its eTag
+        // as well as its ETag
         resp.setDateHeader(HttpHeaders.LAST_MODIFIED, asset.lastModifiedTime);
-        resp.setHeader(HttpHeaders.ETAG, new EntityTag(asset.eTag).toString());
+        resp.setHeader(HttpHeaders.ETAG, hash2etag(asset.hash));
 
-        // Check the ETags to see if the resource has changed...
+        // Check the If-None-Match header to see if any ETags match this resource
         String ifNoneMatch = req.getHeader(HttpHeaders.IF_NONE_MATCH);
         if (ifNoneMatch != null) {
             for (String eTag : IF_NONE_MATCH_SPLITTER.split(ifNoneMatch)) {
-                if ("*".equals(eTag) || asset.eTag.equals(getETagValue(eTag))) {
-                    // This is the same version the client has
+                if ("*".equals(eTag) || asset.hash.equals(etag2hash(eTag))) {
                     resp.sendError(HttpServletResponse.SC_NOT_MODIFIED);
                     return;
                 }
             }
         }
 
-        // Check the last modification time...
+        // Check the If-Modified-Since header to see if this resource is newer
         if (asset.lastModifiedTime <= req.getDateHeader(HttpHeaders.IF_MODIFIED_SINCE)) {
-            // Theirs is the same, or later than ours
             resp.sendError(HttpServletResponse.SC_NOT_MODIFIED);
             return;
         }
 
         // Send back the correct content type and character encoding headers
-        resp.setContentType(asset.mediaType.type() + "/" + asset.mediaType.subtype());
+        resp.setContentType(asset.mediaType.toString());
         if (asset.mediaType.charset().isPresent()) {
             resp.setCharacterEncoding(asset.mediaType.charset().get().toString());
         }
 
+        // Finally write the bytes of the asset out
         ServletOutputStream output = resp.getOutputStream();
         try {
             output.write(asset.bytes);
@@ -139,202 +134,24 @@ public class WebJarServlet extends HttpServlet {
         return sb.toString();
     }
 
-    private static String getETagValue(String eTag) {
+    private static String hash2etag(String hash) {
+        return new EntityTag(hash).toString();
+    }
+
+    private static String etag2hash(String etag) {
+        String hash;
+
         try {
-            return EntityTag.valueOf(eTag).getValue();
+            hash = EntityTag.valueOf(etag).getValue();
         } catch (Exception e) {
             return null;
         }
-    }
 
-    /** Weigh an asset according to the number of bytes it contains. */
-    private static final class AssetSizeWeigher implements Weigher<AssetId, Asset> {
-        @Override
-        public int weigh(AssetId key, Asset asset) {
-            // return file sze in bytes
-            return asset.bytes.length;
-        }
-    }
-
-    private static final class AssetId {
-        public final String library;
-        public final String resource;
-
-        public AssetId(String library, String resource) {
-            this.library = library;
-            this.resource = resource;
+        // Jetty insists on adding a -gzip suffix to ETags sometimes.  If it's there, then strip it off.
+        if (hash.endsWith("-gzip")) {
+            hash = hash.substring(0, hash.length() - 5);
         }
 
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || !(o instanceof AssetId)) return false;
-
-            AssetId id = (AssetId) o;
-            return Objects.equal(library, id.library) && Objects.equal(resource, id.resource);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hashCode(library, resource);
-        }
-    }
-
-    private static final class Asset {
-        public final byte[] bytes;
-        public final MediaType mediaType;
-        public final String eTag;
-        public final long lastModifiedTime;
-
-        public Asset(byte[] bytes, MediaType mediaType) {
-            this.bytes = bytes;
-            this.mediaType = mediaType;
-            this.eTag = Hashing.murmur3_128().hashBytes(bytes).toString();
-            this.lastModifiedTime = (new Date().getTime() / 1000) * 1000;  // Ignore milliseconds
-        }
-    }
-
-    private static class AssetLoader extends CacheLoader<AssetId, Asset> {
-        // For determining content type and content encoding
-        private static final MimeTypes MIME_TYPES = new MimeTypes();
-        private static final MediaType DEFAULT_MEDIA_TYPE = MediaType.HTML_UTF_8;
-        private static final Charset DEFAULT_CHARSET = Charsets.UTF_8;
-
-        private final CacheLoader<String, String> versionLoader;
-        private final LoadingCache<String, String> versionCache;
-
-        private AssetLoader(CacheLoader<String, String> versionLoader) {
-            this.versionLoader = versionLoader;
-            this.versionCache = CacheBuilder.newBuilder()
-                    .maximumSize(10)
-                    .build(this.versionLoader);
-        }
-
-        @Override
-        public Asset load(AssetId id) throws Exception {
-            String version;
-            try {
-                version = versionCache.get(id.library);
-            } catch (ExecutionException e) {
-                return null;
-            }
-
-            // Sometimes the WebJar has multiple releases which gets represented by a -# suffix to the version number
-            // inside of pom.properties.  When this happens, the files inside of the jar don't include the WebJar
-            // release number as part of the file path.  For example, the angularjs 1.1.1 WebJar has a version inside of
-            // pom.properties of 1.1.1-1.  But the path to angular.js inside of the jar is
-            // META-INF/resources/webjars/angularjs/1.1.1/angular.js.
-            //
-            // Alternatively sometimes the developer of the library includes a -suffix in the true library version.  In
-            // these cases the WebJar pom.properties will include that suffix in the version number, and the file paths
-            // inside of the jar will also include the suffix.  For example, the backbone-marionette 1.0.0-beta6 WebJar
-            // has a version inside of pom.properties of 1.0.0-beta6.  The path to backbone.marionette.js is also
-            // META-INF/resources/webjars/backbone-marionette/1.0.0-beta6/backbone.marionette.js.
-            //
-            // So based on the data inside of pom.properties it's going to be impossible to determine whether a -suffix
-            // should be stripped off or not.  A reasonable heuristic however is going to be to just keep trying over
-            // and over starting with the most specific version number, then stripping a suffix off at a time until
-            // there are no more suffixes and the right version number is determined.
-            do {
-                String path = String.format("META-INF/resources/webjars/%s/%s/%s", id.library, version, id.resource);
-
-                try {
-                    URL resource = Resources.getResource(path);
-
-                    // Determine the media type of this resource
-                    MediaType mediaType = getMediaType(path);
-
-                    // We know that this version was valid.  Update the version cache to make sure that we remember it
-                    // for next time around.
-                    versionCache.put(id.library, version);
-
-                    return new Asset(ByteStreams.toByteArray(resource.openStream()), mediaType);
-                } catch (IllegalArgumentException e) {
-                    // ignored
-                }
-
-                // Trim a suffix off of the version number
-                int hyphen = version.lastIndexOf('-');
-                if (hyphen == -1) {
-                    return null;
-                }
-
-                version = version.substring(0, hyphen);
-            }
-            while (true);
-        }
-
-        private MediaType getMediaType(String path) {
-            Buffer mimeType = MIME_TYPES.getMimeByExtension(path);
-            if (mimeType == null) {
-                return DEFAULT_MEDIA_TYPE;
-            }
-
-            MediaType mediaType;
-            try {
-                mediaType = MediaType.parse(mimeType.toString());
-
-                if (mediaType.is(MediaType.ANY_TEXT_TYPE)) {
-                    mediaType = mediaType.withCharset(DEFAULT_CHARSET);
-                }
-            } catch (IllegalArgumentException e) {
-                return DEFAULT_MEDIA_TYPE;
-            }
-
-            return mediaType;
-        }
-    }
-
-    /**
-     * Determines the version of the webjar that's in the classpath for a particular library.
-     * <p/>
-     * The version of a webjar can be determined by looking at the <code>pom.properties</code> file located at
-     * {@code META-INF/maven/<group>/<library>/pom.properties}.
-     * <p/>
-     * Where {@code <group>} is the name of the maven group the webjar artifact is part of, and {@code <library>} is the
-     * name of the library.
-     */
-    private static class VersionLoader extends CacheLoader<String, String> {
-        private final Iterable<String> packages;
-
-        private VersionLoader(Iterable<String> packages) {
-            this.packages = packages;
-        }
-
-        @Override
-        public String load(String library) throws Exception {
-            for (String pkg : packages) {
-                String found = tryToLoadFrom("META-INF/maven/%s/%s/pom.properties", pkg, library);
-                if (found != null) {
-                    return found;
-                }
-            }
-            return null;
-        }
-
-        private String tryToLoadFrom(String format, String searchPackage, String library) {
-            String path = String.format(format, searchPackage, library);
-            URL url;
-            try {
-                url = Resources.getResource(path);
-            } catch (IllegalArgumentException e) {
-                return null;
-            }
-
-            try {
-                Closer closer = Closer.create();
-                InputStream in = closer.register(url.openStream());
-                try {
-                    Properties props = new Properties();
-                    props.load(in);
-
-                    return props.getProperty("version");
-                } finally {
-                    closer.close();
-                }
-            } catch (IOException e) {
-                return null;
-            }
-        }
+        return hash;
     }
 }
