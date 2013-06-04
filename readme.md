@@ -57,9 +57,18 @@ be overidden by invoking the `WebJarBundle` constructor with a
 `com.google.common.cache.CacheBuilder` instance that is configured with
 your desired caching settings.
 
+The cache that is built by the `WebJarBundle` will include a
+`com.google.common.cache.Weigher` as part of it that indicates how many bytes
+each resource is taking up in the cache.  If desired you can include a maximum
+weight in your `CacheBuilder` to limit the amount of memory used by the cache.
 
-## Customizing WebJar packages
 
-Custom WebJars often appear in a package other than `org.webjars`.  In order to
-support these custom WebJars, just invoke the `WebJarBundle` constructor with
-a list of the package names you would like to be considered by the bundle.
+## Customizing WebJar groups
+
+Custom WebJars artifacts often appear in a maven group other than `org.webjars`.
+In order to support these custom WebJars, just invoke the `WebJarBundle`
+constructor with a list of the group names you would like to be considered by
+the bundle.
+
+Don't forget to also include `org.webjars` in your list if you want standard
+WebJars to be found as well.
