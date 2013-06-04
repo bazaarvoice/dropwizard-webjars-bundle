@@ -21,16 +21,16 @@ import java.util.Properties;
 class VersionLoader extends CacheLoader<String, String> {
     public static final String NOT_FOUND = "VERSION-NOT-FOUND";
 
-    private final Iterable<String> packages;
+    private final Iterable<String> groups;
 
-    VersionLoader(Iterable<String> packages) {
-        this.packages = packages;
+    VersionLoader(Iterable<String> groups) {
+        this.groups = groups;
     }
 
     @Override
     public String load(String library) throws Exception {
-        for (String pkg : packages) {
-            String found = tryToLoadFrom("META-INF/maven/%s/%s/pom.properties", pkg, library);
+        for (String group : groups) {
+            String found = tryToLoadFrom("META-INF/maven/%s/%s/pom.properties", group, library);
             if (found != null) {
                 return found;
             }
@@ -39,8 +39,8 @@ class VersionLoader extends CacheLoader<String, String> {
         return NOT_FOUND;
     }
 
-    private String tryToLoadFrom(String format, String searchPackage, String library) {
-        String path = String.format(format, searchPackage, library);
+    private String tryToLoadFrom(String format, String group, String library) {
+        String path = String.format(format, group, library);
         URL url;
         try {
             url = Resources.getResource(path);
