@@ -1,6 +1,6 @@
 # dropwizard-webjars-bundle
 
-Resource for use in [Dropwizard](http://dropwizard.codahale.com) that makes it
+A [Dropwizard](http://dropwizard.codahale.com) bundle that makes it
 a lot easier to work with [WebJars](http://www.webjars.org).
 
 Regular java code doesn't need to know or care about what version of a
@@ -17,7 +17,7 @@ Just add this maven dependency to get started:
 <dependency>
     <groupId>com.bazaarvoice.dropwizard</groupId>
     <artifactId>dropwizard-webjars-bundle</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
 </dependency>
 ```
 
