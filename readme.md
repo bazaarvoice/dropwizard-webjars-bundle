@@ -21,8 +21,8 @@ Just add this maven dependency to get started:
 </dependency>
 ```
 
-For Dropwizard 0.6.2: use v.0.1.1
-For Dropwizard 0.7.0: use v.0.2.0
+- For Dropwizard 0.6.2: use version < 0.2.0
+- For Dropwizard 0.7.0: use version >= 0.2.0
 
 Add the resource to your environment:
 
