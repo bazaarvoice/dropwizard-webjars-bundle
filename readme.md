@@ -17,16 +17,19 @@ Just add this maven dependency to get started:
 <dependency>
     <groupId>com.bazaarvoice.dropwizard</groupId>
     <artifactId>dropwizard-webjars-bundle</artifactId>
-    <version>0.1.1</version>
+    <version>0.2.0</version>
 </dependency>
 ```
+
+For Dropwizard 0.6.2: use v.0.1.1
+For Dropwizard 0.7.0: use v.0.2.0
 
 Add the resource to your environment:
 
 ```java
-public class SampleService extends Service<Configuration> {
+public class SampleApplication extends Application<Configuration> {
     public static void main(String[] args) throws Exception {
-        new SampleService().run(args);
+        new SampleApplication().run(args);
     }
 
     @Override

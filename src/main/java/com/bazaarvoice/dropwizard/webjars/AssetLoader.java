@@ -8,7 +8,6 @@ import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;
 import com.google.common.net.MediaType;
 import org.eclipse.jetty.http.MimeTypes;
-import org.eclipse.jetty.io.Buffer;
 
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -83,14 +82,14 @@ class AssetLoader extends CacheLoader<AssetId, Asset> {
     }
 
     private MediaType getMediaType(String path) {
-        Buffer mimeType = MIME_TYPES.getMimeByExtension(path);
+        String mimeType = MIME_TYPES.getMimeByExtension(path);
         if (mimeType == null) {
             return DEFAULT_MEDIA_TYPE;
         }
 
         MediaType mediaType;
         try {
-            mediaType = MediaType.parse(mimeType.toString());
+            mediaType = MediaType.parse(mimeType);
 
             if (mediaType.is(MediaType.ANY_TEXT_TYPE)) {
                 mediaType = mediaType.withCharset(DEFAULT_CHARSET);

@@ -2,9 +2,9 @@ package com.bazaarvoice.dropwizard.webjars;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.Lists;
-import com.yammer.dropwizard.Bundle;
-import com.yammer.dropwizard.config.Bootstrap;
-import com.yammer.dropwizard.config.Environment;
+import io.dropwizard.Bundle;
+import io.dropwizard.setup.Bootstrap;
+import io.dropwizard.setup.Environment;
 
 import java.util.Collections;
 import java.util.List;
@@ -36,6 +36,6 @@ public class WebJarBundle implements Bundle {
     @Override
     public void run(Environment environment) {
         WebJarServlet servlet = new WebJarServlet(cacheBuilder, packages);
-        environment.addServlet(servlet, WebJarServlet.URL_PREFIX + "*");
+        environment.servlets().addServlet("webjars", servlet).addMapping(WebJarServlet.URL_PREFIX + "*");
     }
 }

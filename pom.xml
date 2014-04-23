@@ -10,7 +10,7 @@
 
   <groupId>com.bazaarvoice.dropwizard</groupId>
   <artifactId>dropwizard-webjars-bundle</artifactId>
-  <version>0.1.2-SNAPSHOT</version>
+  <version>0.2.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
   <name>dropwizard-webjars-bundle</name>
@@ -30,14 +30,14 @@
   <dependencies>
     <!-- Dropwizard -->
     <dependency>
-      <groupId>com.yammer.dropwizard</groupId>
+      <groupId>io.dropwizard</groupId>
       <artifactId>dropwizard-core</artifactId>
-      <version>0.6.2</version>
+      <version>0.7.0</version>
     </dependency>
     <dependency>
-      <groupId>com.yammer.dropwizard</groupId>
+      <groupId>io.dropwizard</groupId>
       <artifactId>dropwizard-testing</artifactId>
-      <version>0.6.2</version>
+      <version>0.7.0</version>
       <scope>test</scope>
     </dependency>
 
@@ -45,7 +45,7 @@
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
-      <version>14.0.1</version>
+      <version>16.0.1</version>
     </dependency>
 
     <!-- JUnit -->
@@ -59,8 +59,8 @@
     <!-- Jetty -->
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
-      <artifactId>test-jetty-servlet</artifactId>
-      <version>8.1.10.v20130312</version>
+      <artifactId>jetty-servlet</artifactId>
+      <version>9.0.7.v20131107</version>
       <scope>test</scope>
     </dependency>
 
