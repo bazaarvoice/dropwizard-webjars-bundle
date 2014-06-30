@@ -17,7 +17,7 @@ Just add this maven dependency to get started:
 <dependency>
     <groupId>com.bazaarvoice.dropwizard</groupId>
     <artifactId>dropwizard-webjars-bundle</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
 </dependency>
 ```
 
