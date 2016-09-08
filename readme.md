@@ -1,5 +1,9 @@
 # dropwizard-webjars-bundle
 
+**NOTE: THIS PROJECT IS DEPRECATED.** This projects is no longer maintained.  It is deprecated for
+[dropwizard-bundles maintained fork](https://github.com/dropwizard-bundles/dropwizard-webjars-bundle).
+Users of this project should update their project dependencies appropriately.
+
 A [Dropwizard](http://dropwizard.codahale.com) bundle that makes it
 a lot easier to work with [WebJars](http://www.webjars.org).
 
