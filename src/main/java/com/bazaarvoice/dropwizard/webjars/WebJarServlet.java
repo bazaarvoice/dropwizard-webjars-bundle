@@ -29,13 +29,13 @@ import java.util.regex.Pattern;
  */
 public class WebJarServlet extends HttpServlet {
     /** The URL prefix that webjars are served out of. */
-    public static final String URL_PREFIX = "/webjars/";
+    public static final String DEFAULT_URL_PREFIX = "/webjars/";
 
     /** The default maven group(s) that WebJars are searched for in. */
     public static final String[] DEFAULT_MAVEN_GROUPS = { "org.webjars" };
 
     /** A path parser that can determine what library and library resource a particular path is for. */
-    private static final Pattern PATH_PARSER = Pattern.compile(URL_PREFIX + "([^/]+)/(.+)");
+    private final Pattern pathParser;
 
     /** An If-None-Match header parser, splits the header into the multiple ETags that might be present. */
     private static final Splitter IF_NONE_MATCH_SPLITTER = Splitter.on(',').omitEmptyStrings().trimResults();
@@ -44,8 +44,10 @@ public class WebJarServlet extends HttpServlet {
 
     private final transient LoadingCache<AssetId, Asset> cache;
 
+    private final String urlPrefix;
+
     @SuppressWarnings("unchecked")
-    public WebJarServlet(CacheBuilder builder, Iterable<String> groups) {
+    public WebJarServlet(CacheBuilder builder, Iterable<String> groups, final String urlPrefix) {
         if (builder == null) {
             builder = CacheBuilder.newBuilder()
                     .maximumWeight(5 * 1024 * 1024)
@@ -58,6 +60,8 @@ public class WebJarServlet extends HttpServlet {
 
         AssetLoader loader = new AssetLoader(new VersionLoader(groups));
         cache = builder.weigher(new AssetWeigher()).build(loader);
+        this.urlPrefix = (urlPrefix == null ? DEFAULT_URL_PREFIX : urlPrefix);
+        this.pathParser = Pattern.compile(this.urlPrefix+ "([^/]+)/(.+)");
     }
 
     @Override
@@ -74,7 +78,7 @@ public class WebJarServlet extends HttpServlet {
         String path = getFullPath(req);
 
         // Check to see if this is a valid path that we know how to deal with, if so parse out the library and resource
-        Matcher m = PATH_PARSER.matcher(path);
+        Matcher m = pathParser.matcher(path);
         if (!m.matches()) {
             resp.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;

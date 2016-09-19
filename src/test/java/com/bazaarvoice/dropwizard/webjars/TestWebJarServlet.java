@@ -16,6 +16,6 @@ public class TestWebJarServlet extends WebJarServlet {
     }
 
     public TestWebJarServlet() {
-        super(null, ImmutableList.copyOf(MAVEN_GROUPS));
+        super(null, ImmutableList.copyOf(MAVEN_GROUPS), WebJarServlet.DEFAULT_URL_PREFIX);
     }
 }

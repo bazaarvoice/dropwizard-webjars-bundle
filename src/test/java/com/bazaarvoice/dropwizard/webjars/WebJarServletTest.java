@@ -21,7 +21,7 @@ public class WebJarServletTest {
 
     @Before
     public void setup() throws Exception {
-        servletTester.addServlet(TestWebJarServlet.class, TestWebJarServlet.URL_PREFIX + "*");
+        servletTester.addServlet(TestWebJarServlet.class, TestWebJarServlet.DEFAULT_URL_PREFIX + "*");
         servletTester.start();
     }
 
@@ -148,7 +148,7 @@ public class WebJarServletTest {
         HttpTester.Request request = HttpTester.newRequest();
         request.setMethod("GET");
         request.setVersion("HTTP/1.0");
-        request.setURI(WebJarServlet.URL_PREFIX + url);
+        request.setURI(WebJarServlet.DEFAULT_URL_PREFIX + url);
         return request;
     }
 
